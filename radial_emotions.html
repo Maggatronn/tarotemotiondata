@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Emotion Agreement Radar Chart</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        .chart-container {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            gap: 20px;
+        }
+        .tooltip {
+            position: absolute;
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            pointer-events: none;
+            font-family: Arial, sans-serif;
+        }
+        select {
+            padding: 8px;
+            font-size: 16px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            width: 200px;
+            margin-bottom: 20px;
+        }
+        #chart {
+            position: relative;
+        }
+        .axis-label {
+            font-size: 12px;
+            font-family: Arial;
+            fill: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="chart-container">
+        <select id="imageSelect">
+            <option value="all">All Images (Average)</option>
+        </select>
+        <div id="chart"></div>
+    </div>
+    <script>
+        // Load and process the data
+        d3.csv("agreement_results_combined.csv").then(data => {
+            const emotions = ['Joy', 'Trust', 'Fear', 'Surprise', 'Sadness', 'Disgust', 'Anger', 'Anticipation'];
+            
+            // Sort image IDs numerically
+            const imageIds = data.map(d => d.ImageID).sort((a, b) => {
+                const numA = parseInt(a);
+                const numB = parseInt(b);
+                return numA - numB;
+            });
+
+            // Populate dropdown with image IDs
+            const dropdown = d3.select("#imageSelect");
+            imageIds.forEach(id => {
+                dropdown.append("option")
+                    .attr("value", id)
+                    .text(`Image ${id}`);
+            });
+
+            // Function to calculate values based on selection
+            function calculateValues(selectedId) {
+                if (selectedId === 'all') {
+                    return emotions.map(emotion => {
+                        const imageValues = data.map(d => parseFloat(d[`Image_${emotion}_agreement`]) || 0);
+                        const transcriptValues = data.map(d => parseFloat(d[`Transcript_${emotion}_agreement`]) || 0);
+                        return {
+                            emotion: emotion,
+                            imageValue: d3.mean(imageValues) || 0,
+                            transcriptValue: d3.mean(transcriptValues) || 0
+                        };
+                    });
+                } else {
+                    const selectedData = data.find(d => d.ImageID === selectedId);
+                    return emotions.map(emotion => ({
+                        emotion: emotion,
+                        imageValue: parseFloat(selectedData[`Image_${emotion}_agreement`]) || 0,
+                        transcriptValue: parseFloat(selectedData[`Transcript_${emotion}_agreement`]) || 0
+                    }));
+                }
+            }
+
+            // Set up dimensions
+            const width = 700;
+            const height = 600;
+            const margin = 100;
+            const radius = Math.min(width, height) / 2 - margin;
+
+            // Create SVG
+            const svg = d3.select("#chart")
+                .append("svg")
+                .attr("width", width)
+                .attr("height", height)
+                .append("g")
+                .attr("transform", `translate(${width/2},${height/2})`);
+
+            // Create scales
+            const numEmotions = emotions.length;
+            const angleStep = (2 * Math.PI) / numEmotions;
+            
+            // Create angle scale that ensures equal spacing
+            const angleScale = d3.scalePoint()
+                .domain(emotions)
+                .range([0, 2 * Math.PI - angleStep]); // Distribute over circle minus one step
+
+            const radiusScale = d3.scaleLinear()
+                .domain([0, 1])
+                .range([0, radius]);
+
+            // Create color scale
+            const emotionColors = {
+                'Joy': '#FEC50D',
+                'Trust': '#A2A347',
+                'Fear': '#4C8B4D',
+                'Surprise': '#3E737D',
+                'Sadness': '#3F5D9A',
+                'Disgust': '#7B508E',
+                'Anger': '#F46423',
+                'Anticipation': '#FF8B00'
+            };
+
+            // Create patterns for transcript segments
+            const defs = svg.append("defs");
+            
+            // Create grey pattern for legend
+            const legendPattern = defs.append("pattern")
+                .attr("id", "pattern-legend")
+                .attr("patternUnits", "userSpaceOnUse")
+                .attr("width", 8)
+                .attr("height", 8)
+                .attr("patternTransform", "rotate(45)");
+
+            legendPattern.append("rect")
+                .attr("width", 8)
+                .attr("height", 8)
+                .attr("fill", "#999")
+                .attr("fill-opacity", 0.3);
+
+            legendPattern.append("line")
+                .attr("x1", 0)
+                .attr("y1", 0)
+                .attr("x2", 0)
+                .attr("y2", 8)
+                .attr("stroke", "#999")
+                .attr("stroke-width", 4)
+                .attr("stroke-opacity", 0.5);
+
+            // Create patterns for each emotion
+            emotions.forEach(emotion => {
+                const pattern = defs.append("pattern")
+                    .attr("id", `pattern-${emotion}`)
+                    .attr("patternUnits", "userSpaceOnUse")
+                    .attr("width", 8)
+                    .attr("height", 8)
+                    .attr("patternTransform", "rotate(45)");
+
+                pattern.append("rect")
+                    .attr("width", 8)
+                    .attr("height", 8)
+                    .attr("fill", emotionColors[emotion])
+                    .attr("fill-opacity", 0.3);
+
+                pattern.append("line")
+                    .attr("x1", 0)
+                    .attr("y1", 0)
+                    .attr("x2", 0)
+                    .attr("y2", 8)
+                    .attr("stroke", emotionColors[emotion])
+                    .attr("stroke-width", 4)
+                    .attr("stroke-opacity", 0.5);
+            });
+
+            // Add tooltip
+            const tooltip = d3.select("body")
+                .append("div")
+                .attr("class", "tooltip")
+                .style("opacity", 0);
+
+            // Function to get the angle between two emotions
+            function getIntermediateAngle(emotion1, emotion2) {
+                let angle1 = angleScale(emotion1);
+                let angle2;
+                
+                // Special case for the last-to-first emotion connection
+                if (emotion2 === emotions[0] && emotion1 === emotions[emotions.length - 1]) {
+                    angle2 = 2 * Math.PI;
+                } else {
+                    angle2 = angleScale(emotion2);
+                }
+                
+                return (angle1 + angle2) / 2;
+            }
+
+            // Function to create individual segments
+            function createSegment(emotion, nextEmotion, value, nextValue, isTranscript = false) {
+                let emotionAngle = angleScale(emotion);
+                let nextEmotionAngle;
+                
+                // Special case for the last-to-first emotion connection
+                if (nextEmotion === emotions[0] && emotion === emotions[emotions.length - 1]) {
+                    nextEmotionAngle = 2 * Math.PI;
+                } else {
+                    nextEmotionAngle = angleScale(nextEmotion);
+                }
+
+                // Calculate the bar widths
+                const barWidth = (nextEmotionAngle - emotionAngle) / 2;
+                
+                // Calculate the angles for the current bar edges
+                const leftAngle = emotionAngle - barWidth / 2;
+                const rightAngle = emotionAngle + barWidth / 2;
+                
+                // Calculate the angles for the next bar edges
+                const nextLeftAngle = nextEmotionAngle - barWidth / 2;
+                
+                // Create points for the connected bar shape
+                const points = [
+                    // Start at center
+                    [0, 0],
+                    // Left edge of current bar
+                    [
+                        radiusScale(value) * Math.cos(leftAngle - Math.PI / 2),
+                        radiusScale(value) * Math.sin(leftAngle - Math.PI / 2)
+                    ],
+                    // Right edge of current bar
+                    [
+                        radiusScale(value) * Math.cos(rightAngle - Math.PI / 2),
+                        radiusScale(value) * Math.sin(rightAngle - Math.PI / 2)
+                    ],
+                    // Left edge of next bar (connecting point)
+                    [
+                        radiusScale(nextValue) * Math.cos(nextLeftAngle - Math.PI / 2),
+                        radiusScale(nextValue) * Math.sin(nextLeftAngle - Math.PI / 2)
+                    ],
+                    // Back to center
+                    [0, 0]
+                ];
+
+                return d3.line()
+                    .x(d => d[0])
+                    .y(d => d[1])
+                    .curve(d3.curveLinearClosed)
+                    (points);
+            }
+
+            // Function to update the visualization
+            function updateVisualization(selectedId) {
+                const values = calculateValues(selectedId);
+
+                // Create radar axes
+                const axes = svg.selectAll(".axis")
+                    .data(emotions)
+                    .join("g")
+                    .attr("class", "axis");
+
+                // Add or update axis lines
+                axes.selectAll(".axis-line")
+                    .data(d => [d])
+                    .join("line")
+                    .attr("class", "axis-line")
+                    .attr("x1", 0)
+                    .attr("y1", 0)
+                    .attr("x2", d => radius * Math.cos(angleScale(d) - Math.PI / 2))
+                    .attr("y2", d => radius * Math.sin(angleScale(d) - Math.PI / 2))
+                    .attr("stroke", "#ddd")
+                    .attr("stroke-width", 1);
+
+                // Add or update axis labels
+                axes.selectAll(".axis-label")
+                    .data(d => [d])
+                    .join("text")
+                    .attr("class", "axis-label")
+                    .attr("x", d => (radius + 20) * Math.cos(angleScale(d) - Math.PI / 2))
+                    .attr("y", d => (radius + 20) * Math.sin(angleScale(d) - Math.PI / 2))
+                    .attr("dy", "0.35em")
+                    .attr("text-anchor", d => {
+                        const angle = angleScale(d);
+                        return angle < Math.PI / 2 || angle > 3 * Math.PI / 2 ? "start" : "end";
+                    })
+                    .text(d => d)
+                    .style("fill", d => emotionColors[d]);
+
+                // Create segments for image values
+                emotions.forEach((emotion, i) => {
+                    const nextEmotion = emotions[(i + 1) % emotions.length];
+                    const value = values.find(v => v.emotion === emotion).imageValue;
+                    const nextValue = values.find(v => v.emotion === nextEmotion).imageValue;
+
+                    svg.selectAll(`.segment-image-${emotion}`)
+                        .data([null])
+                        .join("path")
+                        .attr("class", `segment-image-${emotion}`)
+                        .attr("d", createSegment(emotion, nextEmotion, value, nextValue))
+                        .attr("fill", emotionColors[emotion])
+                        .attr("fill-opacity", 0.4)  // More transparent
+                        .on("mouseover", function(event, d) {
+                            d3.select(this)
+                                .attr("fill-opacity", 0.6);
+                            tooltip.style("opacity", 1)
+                                .html(`${emotion} (Image): ${(value * 100).toFixed(1)}%`)
+                                .style("left", (event.pageX + 10) + "px")
+                                .style("top", (event.pageY - 10) + "px");
+                        })
+                        .on("mouseout", function() {
+                            d3.select(this)
+                                .attr("fill-opacity", 0.4);
+                            tooltip.style("opacity", 0);
+                        });
+                });
+
+                // Create segments for transcript values
+                emotions.forEach((emotion, i) => {
+                    const nextEmotion = emotions[(i + 1) % emotions.length];
+                    const value = values.find(v => v.emotion === emotion).transcriptValue;
+                    const nextValue = values.find(v => v.emotion === nextEmotion).transcriptValue;
+
+                    svg.selectAll(`.segment-transcript-${emotion}`)
+                        .data([null])
+                        .join("path")
+                        .attr("class", `segment-transcript-${emotion}`)
+                        .attr("d", createSegment(emotion, nextEmotion, value, nextValue, true))
+                        .attr("fill", `url(#pattern-${emotion})`)  // Use pattern fill
+                        .attr("stroke", emotionColors[emotion])
+                        .attr("stroke-width", 1)
+                        .attr("stroke-opacity", 0.7)
+                        .on("mouseover", function(event, d) {
+                            d3.select(this)
+                                .attr("stroke-opacity", 1);
+                            tooltip.style("opacity", 1)
+                                .html(`${emotion} (Transcript): ${(value * 100).toFixed(1)}%`)
+                                .style("left", (event.pageX + 10) + "px")
+                                .style("top", (event.pageY - 10) + "px");
+                        })
+                        .on("mouseout", function() {
+                            d3.select(this)
+                                .attr("stroke-opacity", 0.7);
+                            tooltip.style("opacity", 0);
+                        });
+                });
+
+                // Add concentric circles for reference
+                const circles = [0.2, 0.4, 0.6, 0.8, 1];
+                svg.selectAll(".reference-circle")
+                    .data(circles)
+                    .join("circle")
+                    .attr("class", "reference-circle")
+                    .attr("r", d => radiusScale(d))
+                    .attr("fill", "none")
+                    .attr("stroke", "#ddd")
+                    .attr("stroke-width", 0.5);
+
+                // Add circle labels
+                svg.selectAll(".circle-label")
+                    .data(circles)
+                    .join("text")
+                    .attr("class", "circle-label")
+                    .attr("y", d => -radiusScale(d))
+                    .attr("dy", "0.35em")
+                    .attr("text-anchor", "middle")
+                    .attr("font-size", "10px")
+                    .attr("fill", "#666")
+                    .text(d => d * 100 + "%");
+
+                // Add legend
+                const legend = svg.selectAll(".legend")
+                    .data(["Image", "Transcript"])
+                    .join("g")
+                    .attr("class", "legend")
+                    .attr("transform", (d, i) => `translate(${radius + 60}, ${-radius + 30 + i * 25})`);  // Moved further right
+
+                legend.selectAll("rect")
+                    .data(d => [d])
+                    .join("rect")
+                    .attr("x", 0)
+                    .attr("width", 15)
+                    .attr("height", 15)
+                    .attr("fill", d => {
+                        if (d === "Image") {
+                            return "#999";
+                        } else {
+                            return "url(#pattern-legend)";
+                        }
+                    })
+                    .attr("fill-opacity", d => d === "Image" ? 0.4 : 1)
+                    .attr("stroke", "#999")
+                    .attr("stroke-width", d => d === "Transcript" ? 1 : 0)
+                    .attr("stroke-opacity", d => d === "Transcript" ? 0.7 : 0);
+
+                legend.selectAll("text")
+                    .data(d => [d])
+                    .join("text")
+                    .attr("x", 25)
+                    .attr("y", 12)
+                    .text(d => d)
+                    .style("font-size", "14px")
+                    .style("font-family", "Arial");
+
+                // Update title
+                svg.select(".chart-title")
+                    .text(selectedId === 'all' 
+                        ? "Image and Transcript Agreement Scores" 
+                        : `Image and Transcript Agreement Scores for Image ${selectedId}`);
+            }
+
+            // Add title
+            svg.append("text")
+                .attr("class", "chart-title")
+                .attr("x", 0)
+                .attr("y", -height/2 + margin/2)
+                .attr("text-anchor", "middle")
+                .style("font-size", "20px")
+                .style("font-family", "Arial")
+                .text("Average Image Agreement Scores");
+
+            // Add event listener for dropdown
+            dropdown.on("change", function() {
+                updateVisualization(this.value);
+            });
+
+            // Initial visualization
+            updateVisualization('all');
+        });
+    </script>
+</body>
+</html> 
