@@ -18,7 +18,7 @@ An interactive D3.js visualization showing emotion agreement scores between imag
 - Concentric reference circles for easy value reading
 
 ## Live Demo
-Visit the live visualization at: https://[YOUR_USERNAME].github.io/[REPO_NAME]/
+Visit the live visualization at: https://maggatronn.github.io/tarotemotiondata/
 
 ## Local Setup
 1. Clone the repository
