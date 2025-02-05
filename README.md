@@ -22,13 +22,12 @@ An interactive D3.js visualization showing emotion agreement scores between imag
 2. Place your `agreement_results_combined.csv` file in the root directory
 3. Open `radial_emotions.html` in a web browser
 
+If that doesn't work, try opening the file in VS code or cursor, and then run this: 
+<python3 -m http.server 2000> and then open localhost:2000 in a web browser
+
+
 ## Data Format
 The visualization expects a CSV file named `agreement_results_combined.csv` with the following columns:
 - ImageID
 - Image_[Emotion]_agreement (for each emotion)
 - Transcript_[Emotion]_agreement (for each emotion)
-
-## Technologies Used
-- D3.js v7
-- HTML5
-- CSS3 
